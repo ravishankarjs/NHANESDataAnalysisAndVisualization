@@ -1,0 +1,418 @@
+---
+title: StackExchange Data Analysis
+author: Ravi Shankar Jaganathan Senthil Kumar | 223296806
+date: 2024/05/26
+format: pdf
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .qmd
+      format_name: quarto
+      format_version: '1.0'
+      jupytext_version: 1.16.2
+  kernelspec:
+    display_name: Python 3 (ipykernel)
+    language: python
+    name: python3
+---
+
+# Executive Summary
+This comprehensive report delves into the analysis of data from the StackExchange network, examining various facets such as badge distribution, popular keywords, user activity, and more. The report provides key findings and valuable insights derived from the conducted analysis.
+
+# Introduction
+StackExchange is a widely used platform for Q&A on a diverse range of subjects. By analyzing data from this platform, we aim to uncover patterns and trends that offer meaningful insights for both users and administrators.
+
+## Data Conversion
+To facilitate easier analysis, we begin by converting all the XML files into CSV format. This conversion process enables seamless data manipulation and analysis using the pandas library.
+
+## Data Loading
+The converted CSV files are then loaded into Pandas DataFrames, preparing the data for subsequent analysis by organizing it into a structured format.
+
+```{python}
+import xml.etree.ElementTree as ET
+import csv
+import pandas as pd
+import matplotlib.pyplot as plt
+import re
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import Counter
+
+
+
+def xml_to_csv(xml_file, csv_file):
+    tree = ET.parse(xml_file)
+    root = tree.getroot()
+
+    with open(csv_file, 'w', newline='', encoding='utf-8') as file:
+        writer = csv.writer(file)
+
+        # Write the header row based on the table name
+        if 'Badges' in xml_file:
+            headers = ['Id', 'UserId', 'Name', 'Date', 'Class', 'TagBased']
+        elif 'Comments' in xml_file:
+            headers = ['Id', 'PostId', 'Score', 'Text', 'CreationDate', 'UserDisplayName', 'UserId', 'ContentLicense']
+        elif 'PostHistory' in xml_file:
+            headers = ['Id', 'PostHistoryTypeId', 'PostId', 'RevisionGUID', 'CreationDate', 'UserId', 'UserDisplayName', 'Comment', 'Text', 'ContentLicense']
+        elif 'PostLinks' in xml_file:
+            headers = ['Id', 'CreationDate', 'PostId', 'RelatedPostId', 'LinkTypeId']
+        elif 'Posts' in xml_file:
+            headers = ['Id', 'PostTypeId', 'AcceptedAnswerId', 'ParentId', 'CreationDate', 'DeletionDate', 'Score', 'ViewCount', 'Body', 'OwnerUserId', 'OwnerDisplayName', 'LastEditorUserId', 'LastEditorDisplayName', 'LastEditDate', 'LastActivityDate', 'Title', 'Tags', 'AnswerCount', 'CommentCount', 'FavoriteCount', 'ClosedDate', 'CommunityOwnedDate', 'ContentLicense']
+        elif 'Tags' in xml_file:
+            headers = ['Id', 'TagName', 'Count', 'ExcerptPostId', 'WikiPostId', 'IsModeratorOnly', 'IsRequired']
+        elif 'Users' in xml_file:
+            headers = ['Id', 'Reputation', 'CreationDate', 'DisplayName', 'LastAccessDate', 'WebsiteUrl', 'Location', 'AboutMe', 'Views', 'UpVotes', 'DownVotes', 'ProfileImageUrl', 'EmailHash', 'AccountId']
+        elif 'Votes' in xml_file:
+            headers = ['Id', 'PostId', 'VoteTypeId', 'UserId', 'CreationDate', 'BountyAmount']
+        else:
+            raise ValueError(f"Unsupported XML file: {xml_file}")
+
+        writer.writerow(headers)
+
+        # Write the data rows
+        for row in root:
+            values = []
+            for header in headers:
+                value = row.attrib.get(header, '')
+                values.append(value)
+            writer.writerow(values)
+
+    print(f"Conversion complete. CSV file saved as {csv_file}")
+
+# Convert XML files to CSV
+xml_files = ['Badges.xml', 'Comments.xml', 'PostHistory.xml', 'PostLinks.xml', 'Posts.xml', 'Tags.xml', 'Users.xml', 'Votes.xml']
+csv_files = ['Badges.csv', 'Comments.csv', 'PostHistory.csv', 'PostLinks.csv', 'Posts.csv', 'Tags.csv', 'Users.csv', 'Votes.csv']
+
+for xml_file, csv_file in zip(xml_files, csv_files):
+    xml_to_csv(xml_file, csv_file)
+```
+
+```{python}
+# Load each CSV file into a DataFrame
+badges_dataframe = pd.read_csv('Badges.csv')
+comments_dataframe = pd.read_csv('Comments.csv')
+post_history_dataframe = pd.read_csv('PostHistory.csv')
+post_links_dataframe = pd.read_csv('PostLinks.csv')
+posts_dataframe = pd.read_csv('Posts.csv')
+tags_dataframe = pd.read_csv('Tags.csv')
+users_dataframe = pd.read_csv('Users.csv')
+votes_dataframe = pd.read_csv('Votes.csv')
+```
+
+## Data Visualization and Text Analysis
+
+### Distribution of Badges by Class
+
+This visualization illustrates the distribution of badges across different classes.
+
+```{python}
+## Data Visualization and Analysis
+
+
+# 1. Distribution of badges by class
+badge_counts = badges_dataframe['Class'].value_counts().reset_index()
+badge_counts.columns = ['BadgeClass', 'Count']
+
+# Create the plot
+plt.figure(figsize=(12, 6))
+ax = sns.barplot(data=badge_counts, x='BadgeClass', y='Count')
+plt.title('Distribution of Badges by Class')
+plt.xlabel('Badge Class')
+plt.ylabel('Count')
+plt.xticks(rotation=45)
+
+# Add the counts as annotations on the bars
+for p in ax.patches:
+    ax.annotate(format(p.get_height(), '.0f'),
+                (p.get_x() + p.get_width() / 2., p.get_height()),
+                ha='center', va='center',
+                xytext=(0, 10),
+                textcoords='offset points')
+
+plt.show()
+
+# Print output results
+print(badge_counts[['BadgeClass', 'Count']])
+```
+
+**Interpretation**: The majority of badges awarded are Bronze, indicating that most users are achieving basic participation milestones. Silver and Gold badges are less common, showing higher levels of achievement.
+
+### Distribution of Post Types
+This visualization shows the distribution of different post types.
+
+```{python}
+# 2. Distribution of different post types
+post_type_counts = posts_dataframe['PostTypeId'].value_counts().reset_index()
+post_type_counts.columns = ['PostTypeId', 'Count']
+
+plt.figure(figsize=(10, 6))
+ax = sns.barplot(data=post_type_counts, x='PostTypeId', y='Count', palette='viridis')
+plt.title('Distribution of Post Types')
+plt.xlabel('Post Type ID')
+plt.ylabel('Count')
+
+# Add the counts as annotations on the bars
+for p in ax.patches:
+    ax.annotate(format(p.get_height(), '.0f'),
+                (p.get_x() + p.get_width() / 2., p.get_height()),
+                ha='center', va='center',
+                xytext=(0, 10),
+                textcoords='offset points')
+
+plt.show()
+```
+
+**Interpretation**: The bar plot shows the frequency of different post types on the platform. It provides insights into the relative prevalence of each post type, such as questions, answers, and other types of posts.
+
+### Number of Posts Over Time
+This visualization depicts the trend of the number of posts over time.
+
+```{python}
+posts_dataframe['CreationDate'] = pd.to_datetime(posts_dataframe['CreationDate'])
+
+# Group by month and get the size of each group
+post_counts_by_date = posts_dataframe.groupby(posts_dataframe['CreationDate'].dt.to_period('M')).size()
+
+# Create the plot
+plt.figure(figsize=(12, 6))
+sns.lineplot(x=post_counts_by_date.index.to_timestamp(), y=post_counts_by_date.values, color='green')
+
+# Add gridlines
+plt.grid(True)
+
+# Add labels and title
+plt.xlabel('Date')
+plt.ylabel('Number of Posts')
+plt.title('Trend of Number of Posts Over Time')
+
+# Rotate x-axis labels for better readability
+plt.xticks(rotation=45)
+
+plt.show()
+```
+
+**Interpretation**: The plot illustrates the trend in the number of posts created on the platform over time. It helps identify patterns, such as periods of high or low activity, and overall growth or decline in user engagement.
+
+### Top Keywords in Posts
+This visualization presents the top 10 keywords extracted from post tags.
+
+```{python}
+# 4. Top 10 keywords extracted from the tags of posts
+
+# Function to extract keywords from tags
+def extract_keywords(tags):
+    return tags.strip('|').split('|') if isinstance(tags, str) else []
+
+# Apply the function to the 'Tags' column
+posts_dataframe['Keywords'] = posts_dataframe['Tags'].apply(extract_keywords)
+
+# Flatten the list of keywords and remove empty strings
+all_keywords = [keyword for sublist in posts_dataframe['Keywords'] for keyword in sublist if keyword]
+
+# Count the occurrence of each keyword
+keyword_counts = Counter(all_keywords)
+
+# Get the top 10 most common keywords
+top_keywords = keyword_counts.most_common(10) if len(all_keywords) > 0 else []
+
+if top_keywords:
+    keywords, counts = zip(*top_keywords)
+    
+    plt.figure(figsize=(10, 6))
+    ax = sns.barplot(x=list(keywords), y=list(counts), color='orange')
+    plt.xlabel('Keyword')
+    plt.ylabel('Frequency')
+    plt.title('Top 10 Keywords Extracted from Tags')
+    
+    # Add the counts as annotations on the bars
+    for i, v in enumerate(counts):
+        plt.text(i, v + 0.1, str(v), color='black', fontweight='bold', ha='center')
+    
+    # Rotate x-axis labels by 90 degrees
+    plt.xticks(rotation=90)
+    
+    plt.show()
+    
+    print(top_keywords)
+else:
+    print("No keywords found to display.")
+```
+
+**Interpretation**: The top keywords provide insights into the most popular and frequently discussed topics on the platform. They highlight the main areas of interest and expertise within the community.
+
+### Most Active Users by Number of Posts
+This visualization highlights the top 10 most active users based on their post count.
+
+```{python}
+# 5. Top 10 most active users by the number of posts
+top_users = posts_dataframe['OwnerUserId'].value_counts().head(10)
+user_names = users_dataframe.set_index('Id')['DisplayName'].reindex(top_users.index).fillna('Unknown')
+
+plt.figure(figsize=(10, 6))
+plt.bar(user_names, top_users.values, color='purple')
+plt.xlabel('User')
+plt.ylabel('Number of Posts')
+plt.title('Top 10 Most Active Users by Number of Posts')
+
+# Add gridlines
+plt.grid(True)
+
+# Add the counts as annotations on the bars
+for i, v in enumerate(top_users.values):
+    plt.text(i, v + 0.1, str(v), color='black', fontweight='bold', ha='center')
+
+plt.xticks(rotation=90)
+plt.show()
+```
+
+**Interpretation**: The plot identifies the most prolific contributors on the platform, showcasing their significant involvement and contribution to the community through their high volume of posts.
+
+### User Reputation Distribution
+This visualization displays the distribution of user reputation scores.
+
+```{python}
+# 6. Distribution of user reputation scores
+plt.figure(figsize=(10, 6))
+plt.hist(users_dataframe['Reputation'], bins=50, log=True, color='skyblue', edgecolor='black')
+plt.xlabel('Reputation Score')
+plt.ylabel('Frequency')
+plt.title('Distribution of User Reputation Scores')
+plt.show()
+```
+
+**Interpretation**: The histogram provides insights into the distribution of user reputations across the platform. It helps identify patterns, such as the presence of a large number of users with low reputation scores and a smaller number of users with high reputation scores, indicating their level of expertise and contribution.
+
+### Word Cloud of Post Titles
+This visualization generates a word cloud from the titles of posts.
+
+```{python}
+!pip install wordcloud
+
+from wordcloud import WordCloud
+
+# 7. Word cloud from the titles of posts
+title_text = ' '.join(posts_dataframe['Title'].dropna().astype(str).tolist())
+wordcloud = WordCloud(width=800, height=400, background_color='white', colormap='viridis').generate(title_text)
+
+plt.figure(figsize=(12, 6))
+plt.imshow(wordcloud, interpolation='bilinear')
+plt.axis('off')
+plt.title('Word Cloud from Post Titles')
+plt.show()
+
+# Print output results
+print(posts_dataframe['Title'].dropna().head(10).tolist())
+```
+
+**Interpretation**: The word cloud highlights the most common and prominent words used in post titles, providing a quick visual summary of the main topics and themes discussed on the platform.
+
+### Distribution of Comment Lengths
+This visualization showcases the distribution of comment lengths.
+
+```{python}
+# 8. Distribution of comment lengths
+comments_dataframe['CommentLength'] = comments_dataframe['Text'].str.len()
+plt.figure(figsize=(10, 6))
+plt.hist(comments_dataframe['CommentLength'], bins=50, color='teal', edgecolor='black')
+plt.xlabel('Comment Length')
+plt.ylabel('Frequency')
+plt.title('Distribution of Comment Lengths')
+plt.show()
+```
+
+**Interpretation**: The histogram shows the distribution of comment lengths, allowing insights into the typical length of comments on the platform. It helps identify patterns, such as the prevalence of short or long comments, and the overall engagement level of users through their comments.
+
+### Answer Count by Question
+This visualization presents the distribution of answer counts per question.
+
+```{python}
+# 9. Distribution of answer counts per question
+answer_counts = posts_dataframe[posts_dataframe['PostTypeId'] == 1]['AnswerCount']
+plt.figure(figsize=(10, 6))
+plt.hist(answer_counts, bins=20, color='crimson', edgecolor='black')
+plt.xlabel('Number of Answers')
+plt.ylabel('Frequency')
+plt.title('Distribution of Answer Counts per Question')
+plt.show()
+```
+
+**Interpretation**: The histogram provides insights into the distribution of answer counts for questions on the platform. It helps identify patterns, such as the prevalence of questions with a low number of answers and the presence of highly engaging questions with a large number of answers.
+
+### User Distribution by Location
+This visualization illustrates the distribution of users based on their self-reported locations on a world map.
+
+```{python}
+# Extract users with locations
+users_with_location = users_dataframe.dropna(subset=['Location'])
+
+# Extract country from location
+def extract_country(location):
+    parts = location.split(',')
+    return parts[-1].strip() if len(parts) > 1 else location.strip()
+
+users_with_location['Country'] = users_with_location['Location'].apply(extract_country)
+
+# Group by country
+country_counts = users_with_location['Country'].value_counts().reset_index()
+country_counts.columns = ['Country', 'Count']
+
+# Load world map
+world = gpd.read_file(gpd.datasets.get_path('naturalearth_lowres'))
+
+# Merge with world map
+world = world.merge(country_counts, how='left', left_on='name', right_on='Country')
+
+# Plot world map with user distribution
+fig, ax = plt.subplots(1, 1, figsize=(15, 10))
+world.boundary.plot(ax=ax)
+world.plot(column='Count', ax=ax, legend=True,
+           legend_kwds={'label': "Number of Users by Country", 'orientation': "horizontal"},
+           missing_kwds={"color": "lightgrey"})
+plt.title('User Distribution by Country')
+plt.show()
+
+# Print output results (sample countries)
+print(country_counts.head(10))
+```
+
+**Interpretation**: The table provides insights into the geographical distribution of users on the platform. It helps identify countries with a high concentration of users and the overall global reach of the community.
+
+# Insights and Conclusions
+
+## Data Privacy and Ethics
+
+During the data analysis process, it is essential to consider the potential data privacy and ethical implications. The StackExchange data contains user-generated content, which may include personal information. To address these concerns, several measures should be taken:
+
+### Anonymization: 
+Any personally identifiable information (PII) should be removed or anonymized to protect user privacy. This includes usernames, email addresses, and other sensitive data.
+
+### Compliance with Regulations: 
+The analysis should adhere to relevant data privacy regulations, such as the General Data Protection Regulation (GDPR) or the California Consumer Privacy Act (CCPA), depending on the jurisdiction. Proper data handling, storage, and disposal procedures should be followed.
+
+### Ethical Considerations: 
+The analysis should be conducted with integrity and respect for user privacy. The insights derived from the data should not be used to exploit or harm individuals or communities. The purpose and intended use of the analysis should be clearly communicated.
+
+### Informed Consent: 
+If the analysis involves any direct interaction with users or the collection of additional data, informed consent should be obtained. Users should be made aware of how their data will be used and given the option to opt-out if desired.
+
+By addressing these data privacy and ethical considerations, we can ensure that the analysis is conducted responsibly and with respect for user rights and privacy.
+
+## Interesting Findings
+
+### Badge Distribution: 
+The analysis of badge distribution reveals that the majority of users have earned bronze badges, indicating a high level of participation and engagement within the community. However, the relatively low number of gold badges suggests that achieving top-tier recognition requires significant contribution and expertise.
+
+### Trending Topics: 
+The top keywords extracted from post tags provide insights into the most popular and trending topics within the StackExchange community. Topics related to algorithms, complexity theory, and graph theory appear to be of significant interest to users. This information can be used to guide content creation, community initiatives, and platform improvements.
+
+### User Engagement: 
+The analysis of user activity and post trends over time reveals patterns of user engagement. Periods of high activity may coincide with specific events, such as the release of new technologies or programming languages. Understanding these patterns can help in planning community events, contests, or other initiatives to foster user participation.
+
+### Knowledge Sharing: 
+The distribution of answer counts per question indicates that the StackExchange platform effectively facilitates knowledge sharing. A significant proportion of questions receive multiple answers, suggesting a collaborative and supportive community. However, the presence of unanswered questions highlights areas where additional expertise or community support may be needed.
+
+### Global Reach: 
+The user distribution by location demonstrates the global reach of the StackExchange platform. Users from diverse geographical regions actively participate in the community, showcasing the platform's ability to connect individuals worldwide. This information can be valuable for planning localized events, language support, or targeted content.
+
+These findings provide valuable insights into the StackExchange community and can inform data-driven decision-making and strategies for platform improvement, user engagement, and community growth.
